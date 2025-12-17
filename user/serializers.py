@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model, authenticate
 from rest_framework import serializers
 from django.utils.translation import gettext as _
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -23,6 +24,10 @@ class UserSerializer(serializers.ModelSerializer):
             user.save()
 
         return user
+
+
+class TokenObtainPairByEmailSerializer(TokenObtainPairSerializer):
+    username_field = "email"
 
 
 class AuthTokenSerializer(serializers.Serializer):
@@ -48,7 +53,7 @@ class AuthTokenSerializer(serializers.Serializer):
                 msg = _("Unable to log in with provided credentials.")
                 raise serializers.ValidationError(msg, code="authorization")
         else:
-            msg = _("Must include 'username' and 'password'.")
+            msg = _("Must include 'email' and 'password'.")
             raise serializers.ValidationError(msg, code="authorization")
 
         attrs["user"] = user

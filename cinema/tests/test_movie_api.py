@@ -1,20 +1,16 @@
-import os
 import tempfile
-from datetime import datetime
 
 from PIL import Image
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
-from django.utils import timezone
 
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from cinema.models import Movie, MovieSession, CinemaHall, Genre, Actor
+from cinema.models import Movie, Genre, Actor
 
 MOVIE_URL = reverse("cinema:movie-list")
-MOVIE_SESSION_URL = reverse("cinema:moviesession-list")
 
 
 def sample_movie(genres=None, actors=None, **params):
@@ -51,17 +47,6 @@ def sample_actor(**params):
     return Actor.objects.create(**defaults)
 
 
-def sample_movie_session(**params):
-    cinema_hall = CinemaHall.objects.create(name="Blue", rows=20, seats_in_row=20)
-
-    defaults = {
-        "show_time": timezone.make_aware(datetime(2022, 6, 2, 14, 0, 0)),
-        "movie": None,
-        "cinema_hall": cinema_hall,
-    }
-    defaults.update(params)
-
-    return MovieSession.objects.create(**defaults)
 
 
 def image_upload_url(movie_id):
@@ -71,6 +56,7 @@ def image_upload_url(movie_id):
 
 def detail_url(movie_id):
     return reverse("cinema:movie-detail", args=[movie_id])
+
 
 class MovieImageUploadTests(TestCase):
     def setUp(self):
@@ -133,6 +119,7 @@ class MovieImageUploadTests(TestCase):
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
         movie = Movie.objects.get(title="Title")
         self.assertFalse(movie.image)
+
 
 class PublicMovieApiTests(TestCase):
     def setUp(self):
@@ -258,7 +245,7 @@ class AdminMovieApiTests(TestCase):
         res = self.client.post(MOVIE_URL, payload)
 
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
-        movie = Movie.objects.get(id=res.data["id"]) if "id" in res.data else Movie.objects.get(title="New")
+        movie = Movie.objects.get(title="New")
         self.assertEqual(movie.title, "New")
 
     def test_update_movie_not_allowed(self):
@@ -287,3 +274,30 @@ class AdminMovieApiTests(TestCase):
 
         self.assertEqual(res.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
         self.assertTrue(Movie.objects.filter(id=movie.id).exists())
+
+
+class MovieImageUploadPermissionsTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = get_user_model().objects.create_user(
+            email="user@myproject.com",
+            password="password",
+        )
+        self.client.force_authenticate(self.user)
+        self.movie = sample_movie()
+
+    def tearDown(self):
+        if getattr(self.movie, "image", None):
+            self.movie.image.delete()
+
+    def test_upload_image_forbidden_for_regular_user(self):
+        url = image_upload_url(self.movie.id)
+
+        with tempfile.NamedTemporaryFile(suffix=".jpg") as ntf:
+            img = Image.new("RGB", (10, 10))
+            img.save(ntf, format="JPEG")
+            ntf.seek(0)
+
+            res = self.client.post(url, {"image": ntf}, format="multipart")
+
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
